@@ -1,5 +1,8 @@
-import {Telegraf} from 'telegraf'
+import { Telegraf } from 'telegraf'
+import express from 'express'
 import axios from 'axios'
+
+const port = process.env.PORT || 8080
 
 if (!process.env.BOT_TOKEN) {
     throw new Error('Provide process.env.BOT_TOKEN')
@@ -7,8 +10,8 @@ if (!process.env.BOT_TOKEN) {
 
 const bot = new Telegraf(process.env.BOT_TOKEN)
 
-const tiktokFullUrl = 'https://www.tiktok.com'
-const vxUrl = 'https://www.vxtiktok.com'
+const tiktokDomain = 'https://www.tiktok.com'
+const vxDomain = 'https://www.vxtiktok.com'
 
 function extractUrl(text: string) {
     return text.match(/\bhttps?:\/\/\S+/gi)?.[0]
@@ -17,31 +20,33 @@ function extractUrl(text: string) {
 async function extractTiktokUrl(url: string) {
     if (!url.includes('tiktok')) return
 
-    if (url.includes(tiktokFullUrl)) {
+    if (url.includes(tiktokDomain)) {
         return url
     }
 
     const shortUrlRes = await axios.get(url)
-    const fullUrlPath = shortUrlRes.request.path
-    if (typeof fullUrlPath !== "string") return
+    const urlPath = shortUrlRes.request.path
+    if (typeof urlPath !== 'string') return
 
-    return tiktokFullUrl + fullUrlPath.replace(/\?.*/, '')
+    return tiktokDomain + urlPath.replace(/\?.*/, '')
 }
 
 async function extractVxUrl(text: string) {
     const url = extractUrl(text)
     if (!url) {
         console.log('No url', url)
-        return
+        return [] as const
     }
 
     const tiktokUrl = await extractTiktokUrl(url)
     if (!tiktokUrl) {
         console.log('No tiktok url', tiktokUrl)
-        return
+        return [] as const
     }
 
-    return tiktokUrl.replace(tiktokFullUrl, vxUrl)
+    const vxUrl = tiktokUrl.replace(tiktokDomain, vxDomain)
+
+    return [vxUrl, url] as const
 }
 
 const repliedUrlsByChat = new Map<number, Set<string>>()
@@ -55,7 +60,7 @@ function getReplies(chatId: number) {
     return repliedUrls
 }
 
-bot.on(['message', 'edited_message'], async ctx => {
+bot.on(['message', 'edited_message'], async (ctx) => {
     try {
         const chatId = ctx.chat.id
         const replies = getReplies(chatId)
@@ -63,23 +68,39 @@ bot.on(['message', 'edited_message'], async ctx => {
         const message = 'edited_message' in ctx.update ? ctx.update.edited_message : ctx.update.message
 
         let text = ''
-        if (typeof message === "string") text = message
+        if (typeof message === 'string') text = message
         if ('text' in message) text = message.text
 
-        const vxUrl = await extractVxUrl(text)
-        if (!vxUrl) return
+        const [vxUrl, originalUrl] = await extractVxUrl(text)
+
+        if (!vxUrl || !originalUrl) return
         if (replies.has(vxUrl)) return
 
         replies.add(vxUrl)
-        await ctx.reply(vxUrl, {reply_to_message_id: message.message_id})
+
+        await ctx.sendMessage(text.replace(originalUrl, vxUrl))
+        await ctx.deleteMessage(message.message_id)
     } catch (e) {
         console.error(e)
     }
 })
 
-bot.launch().then(() => {
-    console.log('Bot is started')
-});
+const html = `<!DOCTYPE html><html><head><title>tt2vx</title></head><body>Index</body></html>`
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+if (process.env.NODE_ENV === 'production') {
+    bot.createWebhook({ domain: 'tt2vx.onrender.com' })
+        .then((webhook) => {
+            const app = express()
+            app.use(webhook)
+            app.get('/', (req, res) => res.type('html').send(html))
+            app.listen(port, () => console.log(`Server is listening on port ${port}`))
+        })
+        .catch((err) => {
+            console.error('Create webhook error', err)
+        })
+} else {
+    bot.launch()
+}
+
+process.once('SIGINT', () => bot.stop('SIGINT'))
+process.once('SIGTERM', () => bot.stop('SIGTERM'))
