@@ -69,6 +69,7 @@ bot.on(['message', 'edited_message'], async (ctx) => {
 
         let text = ''
         if (typeof message === 'string') text = message
+        if ('caption' in message && typeof message.caption === 'string') text = message.caption
         if ('text' in message) text = message.text
 
         const [vxUrl, originalUrl] = await extractVxUrl(text)
