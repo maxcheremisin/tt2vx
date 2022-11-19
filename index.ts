@@ -86,7 +86,20 @@ bot.on(['message', 'edited_message'], async (ctx) => {
     }
 })
 
-const html = `<!DOCTYPE html><html><head><title>tt2vx</title></head><body>Index</body></html>`
+const html = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="refresh" content="5; url='https://t.me/tt2vx_bot'" />
+    <title>tt2vx</title>
+  </head>
+  <body>
+    <p>
+        <a href="https://t.me/tt2vx_bot">tt2vx_bot</a>
+    </p>
+  </body>
+</html>
+`
 
 if (process.env.NODE_ENV === 'production') {
     bot.createWebhook({ domain: 'tt2vx.onrender.com' })
