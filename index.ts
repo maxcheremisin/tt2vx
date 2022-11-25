@@ -1,6 +1,12 @@
 import { Telegraf } from 'telegraf'
 import express from 'express'
+import https from 'https'
 import axios from 'axios'
+
+const api = axios.create({
+    timeout: 5000,
+    httpsAgent: new https.Agent({ keepAlive: true }),
+})
 
 const port = process.env.PORT || 8080
 
@@ -24,11 +30,23 @@ async function extractTiktokUrl(url: string) {
         return url
     }
 
-    const shortUrlRes = await axios.get(url)
-    const urlPath = shortUrlRes.request.path
-    if (typeof urlPath !== 'string') return
+    function tryExtractPath(request: { path?: string }) {
+        if (typeof request.path !== 'string') return
 
-    return tiktokDomain + urlPath.replace(/\?.*/, '')
+        return tiktokDomain + request.path.replace(/\?.*/, '')
+    }
+
+    try {
+        const shortUrlRes = await api.get(url)
+        return tryExtractPath(shortUrlRes.request)
+    } catch (error) {
+        if (axios.isAxiosError(error)) {
+            const result = tryExtractPath(error.request)
+            if (result) return result
+            throw error
+        }
+        throw error
+    }
 }
 
 async function extractVxUrl(text: string) {
@@ -113,7 +131,7 @@ if (process.env.NODE_ENV === 'production') {
             console.error('Create webhook error', err)
         })
 } else {
-    bot.launch()
+    bot.launch().then(() => console.log(`Server is running locally`))
 }
 
 process.once('SIGINT', () => bot.stop('SIGINT'))
